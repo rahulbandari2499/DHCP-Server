@@ -1,0 +1,77 @@
+#!/usr/bin/python
+import socket
+import sys
+import subprocess
+import re
+
+def is_valid_mac(value):
+    allowed = re.compile(r"""
+                         (
+                             ^([0-9A-F]{2}[-]){5}([0-9A-F]{2})$
+                            |^([0-9A-F]{2}[:]){5}([0-9A-F]{2})$
+                         )
+                         """,
+                         re.VERBOSE|re.IGNORECASE)
+
+    if allowed.match(value) is None:
+        return 0
+    else:
+        return 1
+
+
+port_no=6755
+host=''
+mac=''
+flag_corr=0
+
+
+if len(sys.argv)==1:
+    temp=subprocess.check_output('ifconfig | grep HWaddr | awk \'{print $5 }\'',shell=True)
+    temp=temp.split('\n')
+    mac=temp[0]
+    if is_valid_mac(mac)==1:
+        flag_corr=1
+    else:
+        print "invalid mac address"
+        exit(0)
+
+elif len(sys.argv)==2 :
+    print "Wrong arguments"
+    exit(0)
+
+elif(sys.argv[1])=='-m' and  len(sys.argv)==3:
+    mac=sys.argv[2]
+    if is_valid_mac(mac)==1:
+        flag_corr=1
+    else:
+        print "invalid mac address"
+        exit(0)
+
+elif len(sys.argv)==3 and sys.argv[1]!='-m':
+    print "flag must be -m"
+    exit(0)
+
+
+if flag_corr==1:
+    c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    c.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        c.connect((host,port_no))
+    except:
+        print "No available server at port", port_no
+        c.close()
+        exit(0)
+    c.send(mac)
+    #validate mac address
+    prt=c.recv(1024)
+    prt=prt.split(" ")
+    if prt[0]=='no':
+        if len(prt)==2:
+            print "No available address in",prt[1]
+        else:
+            print "No available address"
+    else:
+        for i  in range(len(prt)):
+            print prt[i]
+else:
+    print "Wrong Arguments"

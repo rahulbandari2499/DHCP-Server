@@ -1,0 +1,11 @@
+give permissions before execution
+=>chmod 777 server
+
+run as follows:
+=>./server
+
+=>server always takes in the subsconf file and it will be preprocess all the labs and does subnetting in labs.
+=>If subnetting is not possible within labs it will be output the error msg without even an client request.
+=>if more clients it sends msg to client appropriately.
+=>now we will be seeing the IP addr of server in any lab.
+=>For the remaining range we will be leaving off one address.

@@ -1,0 +1,287 @@
+#!/usr/bin/python
+import socket
+import sys
+from math import log,ceil
+import subprocess
+
+def maskval(prefix):
+    subnet=[0,0,0,0]
+    temp=prefix/8
+    if temp<=0:
+        subnet[0]=int(256-pow(2,(8-prefix)))
+    else:
+        for i in xrange(0,temp):
+            subnet[i]=255
+        if(i+1<4):
+            subnet[i+1]=int(256-pow(2,(8-prefix+8*temp)))
+    return subnet
+
+def netaddr(ip,mask):
+    netarr=[0,0,0,0]
+    for i in xrange(0,4):
+        netarr[i]=ip[i]&mask[i]
+    return netarr
+
+def broadaddr(ip,mask):
+    bdarr=[0,0,0,0]
+    for i in xrange(0,4):
+        bdarr[i]=ip[i]| (255-mask[i])
+    return bdarr
+
+def parse_ip(ip):
+    temp=''
+    for i in xrange(len(ip)-1):
+        temp+=str(ip[i])+"."
+    temp+=str(ip[i+1])
+    return temp
+
+def nextaddr(ip,mask):
+    lastadd=broadaddr(ip,mask)
+    for i in range(0,4):
+        if lastadd[3-i]!=255:
+            lastadd[3-i]+=1
+            break
+        else:
+            lastadd[3-i]=0
+            if lastadd[2-i]!=255:
+                lastadd[2-i]+=1
+                break
+    return lastadd
+
+def getnextip(ip):
+    lastadd=ip
+    flag=1;
+    for i in range(0,4):
+        if lastadd[i]==255:
+            flag+=1;
+    if flag==5:
+        return lastadd;
+
+    for i in range(0,4):
+        if lastadd[3-i]!=255:
+            lastadd[3-i]+=1
+            break
+        else:
+            lastadd[3-i]=0
+            if lastadd[2-i]!=255:
+                lastadd[2-i]+=1
+                break
+    return lastadd
+
+
+def ip_compare(ip1,ip2):
+    dec_1=map(int,ip1)
+    dec_2=map(int,ip2)
+    if dec_1>dec_2:
+        return 1
+    elif dec_1==dec_2:
+        return 0
+    else:
+        return -1
+
+def printfunc(lab_dict,lname,curr_ip):
+    t1=parse_ip(curr_ip)+"/"+str(lab_dict[lname][5])
+    t2=lab_dict[lname][0]
+    t3=lab_dict[lname][1]
+    t4=lab_dict[lname][4]
+    t5=lab_dict[lname][4]
+    sendstr=t1+" "+t2+" "+t3+" "+t4+" "+t5
+    conn.send(sendstr)
+
+
+with open('subnets.conf','rb') as f:
+    data=f.read()
+f.close()
+
+data=data.split("\n")
+gennet=data[0]
+no_subnets=int(data[1])
+data0=data[0].split('/')
+subprefix=data0[1]
+startip=data0[0]
+lab={}#2d list for no of host in each lab [name,number]
+for i in xrange(0,no_subnets):
+    labsplit=data[i+2].split(':')
+    if int(labsplit[1])!=0:
+        lab[labsplit[0]]=int(labsplit[1])
+
+lab=sorted(lab.items(), key=lambda x:x[1],reverse=True)
+lab=list(lab)
+
+regmac={}
+ind=no_subnets+2
+for i in range(ind,len(data)):
+    if data[i]!='':
+        temp=data[i].split(' ')
+        regmac[temp[0]]=temp[1]
+
+# print regmac
+endip=startip.split('.')
+startip=startip.split('.')
+count=3
+if int(subprefix)<0 or int(subprefix)>32:
+    print "wrong subnet prefix"
+    exit(0)
+else:
+    bits=32-int(subprefix)
+    while bits>0:
+        diff=bits-8
+        if diff>=0:
+            endip[count]=str(pow(2,8)-1)
+            bits=diff
+            count=count-1
+        else:
+            endip[count]=str(int(endip[count])+pow(2,bits)-1)
+            bits=0
+    ipdict={}
+
+    for i in xrange(0,4):
+        startip[i]=int(startip[i])
+        endip[i]=int(endip[i])
+
+    #vlsm implementation
+    subprefix=int(subprefix)
+    mask=maskval(subprefix)
+    cnt_hosts=0
+    near_power={}
+
+    total_ip=pow(2,(32-subprefix))-2
+    lab_dict={}
+    #first usable
+    glblast_ip=startip[:]
+    server_flag=0
+    netad=netaddr(startip,mask)
+    ip_ad=startip[:]
+    for i in xrange(len(lab)):
+        closeval=log(lab[i][1]+2,2)
+        if int(closeval)!=closeval:
+            closeval=ceil(closeval)
+        closeval=int(closeval)
+        #print closeval
+        if pow(2,closeval)-2<=total_ip:
+            lab_dict[lab[i][0]]=[0,0,0,0,0,0]
+            submask=maskval(32-closeval)
+            #network address
+            ip_ad=netaddr(ip_ad,submask)
+            lab_dict[lab[i][0]][0]=parse_ip(ip_ad)
+            ipdict[parse_ip(ip_ad)]=[1,'1']
+            #broadcast address
+            bdarr=broadaddr(ip_ad,submask)
+            lab_dict[lab[i][0]][1]=parse_ip(bdarr)
+            ipdict[parse_ip(bdarr)]=[1,'1']
+            #first usable address
+            st_addr=ip_ad[:]
+            st_addr[3]=st_addr[3]+1
+            lab_dict[lab[i][0]][2]=parse_ip(st_addr)
+            #last usable address
+            last_addr=bdarr[:]
+            last_addr[3]=last_addr[3]-1
+            lab_dict[lab[i][0]][3]=parse_ip(last_addr)
+            #gateway
+            gate_addr=ip_ad[:]
+            gate_addr[3]=gate_addr[3]+1
+            lab_dict[lab[i][0]][4]=parse_ip(gate_addr)
+            #mask
+            ip_ad=nextaddr(ip_ad,submask)
+            lab_dict[lab[i][0]][5]=32-closeval
+
+            rem=bdarr[:]
+            glblast_ip=getnextip(rem)
+            if server_flag==0 and pow(2,closeval)-2>lab[i][1]:
+                server_flag=1
+                ipdict[lab_dict[lab[i][0]][2]]=[1,'1']
+                print "ip of server: "+lab_dict[lab[i][0]][2]
+            total_ip-=pow(2,closeval)-2
+#print lab_dict
+if server_flag==0:
+    temp_23=glblast_ip[:]
+    glblast_ip=getnextip(temp_23[:])
+    #glblast_ip=getnextip(temp_23)
+    temp_24=parse_ip(glblast_ip)
+    ipdict[parse_ip(temp_23)]=[1,'1']
+    print "ip of server:" + parse_ip(temp_23)
+
+s=socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+host=""
+port_no=6755
+try:
+    s.bind((host,port_no))
+    print "server listening on port",port_no
+    s.listen(5)
+except:
+    print "Socket creation error"
+    exit(0)
+while True:
+    try:
+        conn,addr=s.accept()
+        print "connected to ",addr
+    except:
+        print "can't connect to client"
+        s.close()
+        exit(0)
+
+    mac=conn.recv(1024)
+    fl=0
+    for keys in ipdict.keys():
+        if ipdict[keys][0]==mac:
+            curr_ip=keys.split('.')
+            lname=ipdict[keys][1]
+            printfunc(lab_dict,lname,curr_ip)
+            fl=1
+            break
+
+    if fl==0:
+        if mac in regmac.keys():
+            lname=regmac[mac]
+            flag=0
+            for i in range(len(lab_dict)):
+                if lab_dict.keys()[i]==regmac[mac]:
+                    lab_st=lab_dict[lname][2].split('.')
+                    lab_end=lab_dict[lname][3].split('.')
+                    curr_ip=lab_st[:]
+                    while ip_compare(curr_ip,lab_end)==-1 or ip_compare(curr_ip,lab_end)==0:
+                        if parse_ip(curr_ip) in ipdict.keys():
+                            var=curr_ip[:]
+                            for i in range(len(curr_ip)):
+                                var[i]=int(var[i])
+                            curr_ip=getnextip(var)[:]
+                            for i in range(len(curr_ip)):
+                                curr_ip[i]=str(curr_ip[i])
+                        else:
+                            flag=1
+                            ipdict[parse_ip(curr_ip)]=[mac,lname]
+                            printfunc(lab_dict,lname,curr_ip)
+                            break
+            if flag==0:
+                conn.send('no'+' '+str(lname))
+
+        else:
+            n_ip=glblast_ip[:]
+            #print temp1
+            temp2=n_ip[:]
+            g_ip=getnextip(temp2)[:]
+            c_ip=g_ip[:]
+            temp3=c_ip[:]
+            b_ip=getnextip(getnextip(temp3)[:])
+
+            if (ip_compare(b_ip,endip)==-1 or ip_compare(b_ip,endip)==0) and (parse_ip(c_ip)!='255.255.255.255'):
+                t=[0,0,0,0,0,0]
+                t[2]=parse_ip(c_ip)
+                t[0]=parse_ip(n_ip)
+                t[1]=parse_ip(b_ip)
+                t[4]=parse_ip(g_ip)
+                t[3]=t[2]
+                t[5]=str(30)
+                sendstr=t[2]+"/"+t[5]+" "+t[0]+" "+t[1]+" "+t[4]+" "+t[4]
+                conn.send(sendstr)
+                rem_1=b_ip[:]
+                glblast_ip=getnextip(rem_1)
+                temp=parse_ip(c_ip);
+                ipdict[temp]=[mac,str(mac)]
+                lab_dict[mac]=[0,0,0,0,0,0]
+                for z in range(0,6):
+                    lab_dict[str(mac)][z]=t[z]
+
+            else:
+                conn.send('no')

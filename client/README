@@ -1,0 +1,10 @@
+give permissions before execution
+=>chmod 777 client
+
+run as follows:
+=>./client
+
+=>appropriate error msg will be printed if allocation not possible.
+=>it validates the mac addresses.
+=>it will check upon the flags correctly
+=>it will be taking the mac address of ethernet if both are present,else single for without flag request
